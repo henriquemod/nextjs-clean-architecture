@@ -11,23 +11,24 @@ The innermost layer containing domain models and errors. Has NO dependencies on 
 Define data shapes using Zod schemas with validation rules.
 
 ```typescript
-// src/entities/models/todo.ts
+// src/entities/models/{entity}.ts
 import { z } from 'zod';
 
-export const selectTodoSchema = z.object({
+export const select{Entity}Schema = z.object({
   id: z.number(),
-  todo: z.string(),
-  completed: z.boolean(),
+  name: z.string().min(1),
+  status: z.enum(['active', 'inactive']),
   userId: z.string(),
+  createdAt: z.date(),
 });
-export type Todo = z.infer<typeof selectTodoSchema>;
+export type {Entity} = z.infer<typeof select{Entity}Schema>;
 
-export const insertTodoSchema = selectTodoSchema.pick({
-  todo: true,
+export const insert{Entity}Schema = select{Entity}Schema.pick({
+  name: true,
   userId: true,
-  completed: true,
+  status: true,
 });
-export type TodoInsert = z.infer<typeof insertTodoSchema>;
+export type {Entity}Insert = z.infer<typeof insert{Entity}Schema>;
 ```
 
 **Rules:**
@@ -59,6 +60,19 @@ export class InputParseError extends Error {
     super(message, options);
   }
 }
+
+// src/entities/errors/auth.ts
+export class UnauthenticatedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
+export class UnauthorizedError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
 ```
 
 **Rules:**
@@ -78,38 +92,40 @@ Contains business logic (use cases) and defines interfaces for repositories/serv
 Each use case represents a single business operation.
 
 ```typescript
-// src/application/use-cases/todos/create-todo.use-case.ts
+// src/application/use-cases/{domain}/create-{entity}.use-case.ts
 import { InputParseError } from '@/src/entities/errors/common';
-import type { Todo } from '@/src/entities/models/todo';
+import type { {Entity} } from '@/src/entities/models/{entity}';
 import type { IInstrumentationService } from '@/src/application/services/instrumentation.service.interface';
-import type { ITodosRepository } from '@/src/application/repositories/todos.repository.interface';
+import type { I{Entity}sRepository } from '@/src/application/repositories/{entity}s.repository.interface';
 
-export type ICreateTodoUseCase = ReturnType<typeof createTodoUseCase>;
+export type ICreate{Entity}UseCase = ReturnType<typeof create{Entity}UseCase>;
 
-export const createTodoUseCase =
+export const create{Entity}UseCase =
   (
     instrumentationService: IInstrumentationService,
-    todosRepository: ITodosRepository
+    {entity}sRepository: I{Entity}sRepository
   ) =>
   (
-    input: { todo: string },
+    input: { name: string },
     userId: string,
     tx?: any
-  ): Promise<Todo> => {
+  ): Promise<{Entity}> => {
     return instrumentationService.startSpan(
-      { name: 'createTodo Use Case', op: 'function' },
+      { name: 'create{Entity} Use Case', op: 'function' },
       async () => {
         // Authorization checks go here
-        if (input.todo.length < 4) {
-          throw new InputParseError('Todo must be at least 4 chars');
+        // Example: check if user has permission, quota limits, etc.
+
+        if (input.name.length < 3) {
+          throw new InputParseError('Name must be at least 3 characters');
         }
 
-        const newTodo = await todosRepository.createTodo(
-          { todo: input.todo, userId, completed: false },
+        const newEntity = await {entity}sRepository.create{Entity}(
+          { name: input.name, userId, status: 'active' },
           tx
         );
 
-        return newTodo;
+        return newEntity;
       }
     );
   };
@@ -128,15 +144,15 @@ export const createTodoUseCase =
 Define contracts for data access.
 
 ```typescript
-// src/application/repositories/todos.repository.interface.ts
-import type { Todo, TodoInsert } from '@/src/entities/models/todo';
+// src/application/repositories/{entity}s.repository.interface.ts
+import type { {Entity}, {Entity}Insert } from '@/src/entities/models/{entity}';
 
-export interface ITodosRepository {
-  createTodo(todo: TodoInsert, tx?: any): Promise<Todo>;
-  getTodo(id: number): Promise<Todo | undefined>;
-  getTodosForUser(userId: string): Promise<Todo[]>;
-  updateTodo(id: number, input: Partial<TodoInsert>, tx?: any): Promise<Todo>;
-  deleteTodo(id: number, tx?: any): Promise<void>;
+export interface I{Entity}sRepository {
+  create{Entity}(data: {Entity}Insert, tx?: any): Promise<{Entity}>;
+  get{Entity}(id: number): Promise<{Entity} | undefined>;
+  get{Entity}sForUser(userId: string): Promise<{Entity}[]>;
+  update{Entity}(id: number, input: Partial<{Entity}Insert>, tx?: any): Promise<{Entity}>;
+  delete{Entity}(id: number, tx?: any): Promise<void>;
 }
 ```
 
@@ -163,6 +179,18 @@ export interface IAuthenticationService {
   createSession(user: User): Promise<{ session: Session; cookie: Cookie }>;
   invalidateSession(sessionId: Session['id']): Promise<{ blankCookie: Cookie }>;
 }
+
+// src/application/services/email.service.interface.ts
+export interface IEmailService {
+  sendEmail(to: string, subject: string, body: string): Promise<void>;
+  sendTemplatedEmail(to: string, template: string, data: Record<string, any>): Promise<void>;
+}
+
+// src/application/services/payment.service.interface.ts
+export interface IPaymentService {
+  createPaymentIntent(amount: number, currency: string): Promise<{ clientSecret: string }>;
+  confirmPayment(paymentIntentId: string): Promise<boolean>;
+}
 ```
 
 ---
@@ -176,39 +204,51 @@ Implements interfaces defined in Application layer using actual technologies.
 Implement repository interfaces with database operations.
 
 ```typescript
-// src/infrastructure/repositories/todos.repository.ts
+// src/infrastructure/repositories/{entity}s.repository.ts
 import { eq } from 'drizzle-orm';
 import { db, Transaction } from '@/drizzle';
-import { todos } from '@/drizzle/schema';
-import { ITodosRepository } from '@/src/application/repositories/todos.repository.interface';
+import { {entity}s } from '@/drizzle/schema';
+import { I{Entity}sRepository } from '@/src/application/repositories/{entity}s.repository.interface';
 import { DatabaseOperationError } from '@/src/entities/errors/common';
-import { TodoInsert, Todo } from '@/src/entities/models/todo';
+import { {Entity}Insert, {Entity} } from '@/src/entities/models/{entity}';
 
-export class TodosRepository implements ITodosRepository {
+export class {Entity}sRepository implements I{Entity}sRepository {
   constructor(
     private readonly instrumentationService: IInstrumentationService,
     private readonly crashReporterService: ICrashReporterService
   ) {}
 
-  async createTodo(todo: TodoInsert, tx?: Transaction): Promise<Todo> {
+  async create{Entity}(data: {Entity}Insert, tx?: Transaction): Promise<{Entity}> {
     const invoker = tx ?? db;
     try {
-      const [created] = await invoker.insert(todos).values(todo).returning();
+      const [created] = await invoker.insert({entity}s).values(data).returning();
       if (created) return created;
-      throw new DatabaseOperationError('Cannot create todo');
+      throw new DatabaseOperationError('Cannot create {entity}');
     } catch (err) {
       this.crashReporterService.report(err);
       throw err;
     }
   }
-  // ... other methods
+
+  async get{Entity}(id: number): Promise<{Entity} | undefined> {
+    try {
+      return await db.query.{entity}s.findFirst({
+        where: eq({entity}s.id, id),
+      });
+    } catch (err) {
+      this.crashReporterService.report(err);
+      throw err;
+    }
+  }
+
+  // ... other methods follow same pattern
 }
 ```
 
 **Rules:**
 - Class implementing the interface
 - Receive dependencies via constructor
-- Use database library (Drizzle) here only
+- Use database library (Drizzle, Prisma, etc.) here only
 - Catch library errors, throw custom errors
 - Support transaction parameter
 
@@ -236,7 +276,28 @@ export class AuthenticationService implements IAuthenticationService {
     if (!result.user || !result.session) {
       throw new UnauthenticatedError('Unauthenticated');
     }
-    // ... rest of implementation
+    const user = await this._usersRepository.getUser(result.user.id);
+    if (!user) {
+      throw new UnauthenticatedError("User doesn't exist");
+    }
+    return { user, session: result.session };
+  }
+  // ... other methods
+}
+
+// src/infrastructure/services/email.service.ts
+import { Resend } from 'resend';
+import { IEmailService } from '@/src/application/services/email.service.interface';
+
+export class EmailService implements IEmailService {
+  private resend: Resend;
+
+  constructor(private readonly instrumentationService: IInstrumentationService) {
+    this.resend = new Resend(process.env.RESEND_API_KEY);
+  }
+
+  async sendEmail(to: string, subject: string, body: string): Promise<void> {
+    await this.resend.emails.send({ from: 'noreply@app.com', to, subject, html: body });
   }
   // ... other methods
 }
@@ -253,33 +314,34 @@ Contains controllers that bridge the outer framework layer with the application 
 Orchestrate use cases and handle cross-cutting concerns.
 
 ```typescript
-// src/interface-adapters/controllers/todos/create-todo.controller.ts
+// src/interface-adapters/controllers/{domain}/create-{entity}.controller.ts
 import { z } from 'zod';
-import { ICreateTodoUseCase } from '@/src/application/use-cases/todos/create-todo.use-case';
+import { ICreate{Entity}UseCase } from '@/src/application/use-cases/{domain}/create-{entity}.use-case';
 import { UnauthenticatedError } from '@/src/entities/errors/auth';
 import { InputParseError } from '@/src/entities/errors/common';
 
-function presenter(todos: Todo[], instrumentationService: IInstrumentationService) {
-  return instrumentationService.startSpan({ name: 'createTodo Presenter' }, () =>
-    todos.map((todo) => ({
-      id: todo.id,
-      todo: todo.todo,
-      userId: todo.userId,
-      completed: todo.completed,
+// Presenter: transforms domain model to API response
+function presenter(entities: {Entity}[], instrumentationService: IInstrumentationService) {
+  return instrumentationService.startSpan({ name: 'create{Entity} Presenter' }, () =>
+    entities.map((entity) => ({
+      id: entity.id,
+      name: entity.name,
+      status: entity.status,
+      // Exclude sensitive fields like internal IDs, timestamps, etc.
     }))
   );
 }
 
-const inputSchema = z.object({ todo: z.string().min(1) });
+const inputSchema = z.object({ name: z.string().min(1) });
 
-export type ICreateTodoController = ReturnType<typeof createTodoController>;
+export type ICreate{Entity}Controller = ReturnType<typeof create{Entity}Controller>;
 
-export const createTodoController =
+export const create{Entity}Controller =
   (
     instrumentationService: IInstrumentationService,
     authenticationService: IAuthenticationService,
     transactionManagerService: ITransactionManagerService,
-    createTodoUseCase: ICreateTodoUseCase
+    create{Entity}UseCase: ICreate{Entity}UseCase
   ) =>
   async (
     input: Partial<z.infer<typeof inputSchema>>,
@@ -293,15 +355,13 @@ export const createTodoController =
     const { data, error } = inputSchema.safeParse(input);
     if (error) throw new InputParseError('Invalid data', { cause: error });
 
-    // 3. Orchestrate Use Cases
-    const todos = await transactionManagerService.startTransaction(async (tx) => {
-      return await Promise.all(
-        data.todo.split(',').map((t) => createTodoUseCase({ todo: t.trim() }, user.id, tx))
-      );
+    // 3. Orchestrate Use Cases (with transaction if needed)
+    const entities = await transactionManagerService.startTransaction(async (tx) => {
+      return await create{Entity}UseCase(data, user.id, tx);
     });
 
     // 4. Present Response
-    return presenter(todos ?? [], instrumentationService);
+    return presenter([entities], instrumentationService);
   };
 ```
 
@@ -323,24 +383,26 @@ Entry points that call controllers from DI container.
 
 ```typescript
 'use server';
+import { revalidatePath } from 'next/cache';
 import { cookies } from 'next/headers';
 import { SESSION_COOKIE } from '@/config';
 import { getInjection } from '@/di/container';
 import { UnauthenticatedError } from '@/src/entities/errors/auth';
-import { InputParseError } from '@/src/entities/errors/common';
+import { InputParseError, NotFoundError } from '@/src/entities/errors/common';
 
-export async function createTodo(formData: FormData) {
+export async function create{Entity}(formData: FormData) {
   const instrumentationService = getInjection('IInstrumentationService');
 
-  return await instrumentationService.instrumentServerAction('createTodo', {}, async () => {
+  return await instrumentationService.instrumentServerAction('create{Entity}', {}, async () => {
     try {
       const data = Object.fromEntries(formData.entries());
       const sessionId = cookies().get(SESSION_COOKIE)?.value;
-      const createTodoController = getInjection('ICreateTodoController');
-      await createTodoController(data, sessionId);
+      const controller = getInjection('ICreate{Entity}Controller');
+      await controller(data, sessionId);
     } catch (err) {
       if (err instanceof InputParseError) return { error: err.message };
       if (err instanceof UnauthenticatedError) return { error: 'Must be logged in' };
+      if (err instanceof NotFoundError) return { error: 'Not found' };
 
       getInjection('ICrashReporterService').report(err);
       return { error: 'An error occurred. Please try again.' };

@@ -19,8 +19,7 @@ di/
     ├── authentication.module.ts
     ├── database.module.ts
     ├── monitoring.module.ts
-    ├── todos.module.ts
-    └── users.module.ts
+    └── {domain}.module.ts
 ```
 
 ## Setting Up DI
@@ -31,28 +30,50 @@ Add symbol for each injectable component.
 
 ```typescript
 import { IAuthenticationService } from '@/src/application/services/authentication.service.interface';
-import { ICreateTodoUseCase } from '@/src/application/use-cases/todos/create-todo.use-case';
-import { ICreateTodoController } from '@/src/interface-adapters/controllers/todos/create-todo.controller';
+import { I{Entity}sRepository } from '@/src/application/repositories/{entity}s.repository.interface';
+import { ICreate{Entity}UseCase } from '@/src/application/use-cases/{domain}/create-{entity}.use-case';
+import { ICreate{Entity}Controller } from '@/src/interface-adapters/controllers/{domain}/create-{entity}.controller';
 
 export const DI_SYMBOLS = {
   // Services
   IAuthenticationService: Symbol.for('IAuthenticationService'),
+  IInstrumentationService: Symbol.for('IInstrumentationService'),
+  ICrashReporterService: Symbol.for('ICrashReporterService'),
+  ITransactionManagerService: Symbol.for('ITransactionManagerService'),
 
   // Repositories
-  ITodosRepository: Symbol.for('ITodosRepository'),
+  I{Entity}sRepository: Symbol.for('I{Entity}sRepository'),
+  IUsersRepository: Symbol.for('IUsersRepository'),
 
   // Use Cases
-  ICreateTodoUseCase: Symbol.for('ICreateTodoUseCase'),
+  ICreate{Entity}UseCase: Symbol.for('ICreate{Entity}UseCase'),
+  IUpdate{Entity}UseCase: Symbol.for('IUpdate{Entity}UseCase'),
+  IDelete{Entity}UseCase: Symbol.for('IDelete{Entity}UseCase'),
 
   // Controllers
-  ICreateTodoController: Symbol.for('ICreateTodoController'),
+  ICreate{Entity}Controller: Symbol.for('ICreate{Entity}Controller'),
+  IUpdate{Entity}Controller: Symbol.for('IUpdate{Entity}Controller'),
 };
 
 export interface DI_RETURN_TYPES {
+  // Services
   IAuthenticationService: IAuthenticationService;
-  ITodosRepository: ITodosRepository;
-  ICreateTodoUseCase: ICreateTodoUseCase;
-  ICreateTodoController: ICreateTodoController;
+  IInstrumentationService: IInstrumentationService;
+  ICrashReporterService: ICrashReporterService;
+  ITransactionManagerService: ITransactionManagerService;
+
+  // Repositories
+  I{Entity}sRepository: I{Entity}sRepository;
+  IUsersRepository: IUsersRepository;
+
+  // Use Cases
+  ICreate{Entity}UseCase: ICreate{Entity}UseCase;
+  IUpdate{Entity}UseCase: IUpdate{Entity}UseCase;
+  IDelete{Entity}UseCase: IDelete{Entity}UseCase;
+
+  // Controllers
+  ICreate{Entity}Controller: ICreate{Entity}Controller;
+  IUpdate{Entity}Controller: IUpdate{Entity}Controller;
 }
 ```
 
@@ -61,7 +82,7 @@ export interface DI_RETURN_TYPES {
 - Symbol value: `Symbol.for('I{ComponentName}')`
 - Type mapping: Same key pointing to the interface type
 
-### Step 2: Create Module (`di/modules/{feature}.module.ts`)
+### Step 2: Create Module (`di/modules/{domain}.module.ts`)
 
 Group related bindings in a module.
 
@@ -70,49 +91,50 @@ import { createModule } from '@evyweb/ioctopus';
 import { DI_SYMBOLS } from '@/di/types';
 
 // Infrastructure implementations
-import { TodosRepository } from '@/src/infrastructure/repositories/todos.repository';
-import { MockTodosRepository } from '@/src/infrastructure/repositories/todos.repository.mock';
+import { {Entity}sRepository } from '@/src/infrastructure/repositories/{entity}s.repository';
+import { Mock{Entity}sRepository } from '@/src/infrastructure/repositories/{entity}s.repository.mock';
 
 // Use cases
-import { createTodoUseCase } from '@/src/application/use-cases/todos/create-todo.use-case';
+import { create{Entity}UseCase } from '@/src/application/use-cases/{domain}/create-{entity}.use-case';
+import { update{Entity}UseCase } from '@/src/application/use-cases/{domain}/update-{entity}.use-case';
 
 // Controllers
-import { createTodoController } from '@/src/interface-adapters/controllers/todos/create-todo.controller';
+import { create{Entity}Controller } from '@/src/interface-adapters/controllers/{domain}/create-{entity}.controller';
 
-export function createTodosModule() {
-  const todosModule = createModule();
+export function create{Domain}Module() {
+  const module = createModule();
 
   // Repository - use mock in test environment
   if (process.env.NODE_ENV === 'test') {
-    todosModule.bind(DI_SYMBOLS.ITodosRepository).toClass(MockTodosRepository);
+    module.bind(DI_SYMBOLS.I{Entity}sRepository).toClass(Mock{Entity}sRepository);
   } else {
-    todosModule
-      .bind(DI_SYMBOLS.ITodosRepository)
-      .toClass(TodosRepository, [
+    module
+      .bind(DI_SYMBOLS.I{Entity}sRepository)
+      .toClass({Entity}sRepository, [
         DI_SYMBOLS.IInstrumentationService,
         DI_SYMBOLS.ICrashReporterService,
       ]);
   }
 
   // Use Case - factory function
-  todosModule
-    .bind(DI_SYMBOLS.ICreateTodoUseCase)
-    .toHigherOrderFunction(createTodoUseCase, [
+  module
+    .bind(DI_SYMBOLS.ICreate{Entity}UseCase)
+    .toHigherOrderFunction(create{Entity}UseCase, [
       DI_SYMBOLS.IInstrumentationService,
-      DI_SYMBOLS.ITodosRepository,
+      DI_SYMBOLS.I{Entity}sRepository,
     ]);
 
   // Controller - factory function
-  todosModule
-    .bind(DI_SYMBOLS.ICreateTodoController)
-    .toHigherOrderFunction(createTodoController, [
+  module
+    .bind(DI_SYMBOLS.ICreate{Entity}Controller)
+    .toHigherOrderFunction(create{Entity}Controller, [
       DI_SYMBOLS.IInstrumentationService,
       DI_SYMBOLS.IAuthenticationService,
       DI_SYMBOLS.ITransactionManagerService,
-      DI_SYMBOLS.ICreateTodoUseCase,
+      DI_SYMBOLS.ICreate{Entity}UseCase,
     ]);
 
-  return todosModule;
+  return module;
 }
 ```
 
@@ -123,7 +145,7 @@ Register the module with the container.
 ```typescript
 import { createContainer } from '@evyweb/ioctopus';
 import { DI_RETURN_TYPES, DI_SYMBOLS } from '@/di/types';
-import { createTodosModule } from '@/di/modules/todos.module';
+import { create{Domain}Module } from '@/di/modules/{domain}.module';
 
 const ApplicationContainer = createContainer();
 
@@ -132,7 +154,7 @@ ApplicationContainer.load(Symbol('MonitoringModule'), createMonitoringModule());
 ApplicationContainer.load(Symbol('DatabaseModule'), createTransactionManagerModule());
 ApplicationContainer.load(Symbol('AuthenticationModule'), createAuthenticationModule());
 ApplicationContainer.load(Symbol('UsersModule'), createUsersModule());
-ApplicationContainer.load(Symbol('TodosModule'), createTodosModule());
+ApplicationContainer.load(Symbol('{Domain}Module'), create{Domain}Module());
 
 export function getInjection<K extends keyof typeof DI_SYMBOLS>(
   symbol: K
@@ -152,7 +174,7 @@ Use `toClass` for class-based implementations.
 module.bind(DI_SYMBOLS.ISimpleService).toClass(SimpleService);
 
 // With dependencies (constructor injection)
-module.bind(DI_SYMBOLS.ITodosRepository).toClass(TodosRepository, [
+module.bind(DI_SYMBOLS.I{Entity}sRepository).toClass({Entity}sRepository, [
   DI_SYMBOLS.IInstrumentationService,  // First constructor param
   DI_SYMBOLS.ICrashReporterService,    // Second constructor param
 ]);
@@ -166,11 +188,11 @@ Use `toHigherOrderFunction` for factory pattern.
 // Factory function signature:
 // (dep1, dep2) => (input) => result
 
-module.bind(DI_SYMBOLS.ICreateTodoUseCase).toHigherOrderFunction(
-  createTodoUseCase,  // The factory function
+module.bind(DI_SYMBOLS.ICreate{Entity}UseCase).toHigherOrderFunction(
+  create{Entity}UseCase,  // The factory function
   [
     DI_SYMBOLS.IInstrumentationService,  // First factory param
-    DI_SYMBOLS.ITodosRepository,          // Second factory param
+    DI_SYMBOLS.I{Entity}sRepository,     // Second factory param
   ]
 );
 ```
@@ -183,8 +205,8 @@ module.bind(DI_SYMBOLS.ICreateTodoUseCase).toHigherOrderFunction(
 'use server';
 import { getInjection } from '@/di/container';
 
-export async function createTodo(formData: FormData) {
-  const controller = getInjection('ICreateTodoController');
+export async function create{Entity}(formData: FormData) {
+  const controller = getInjection('ICreate{Entity}Controller');
   const sessionId = cookies().get(SESSION_COOKIE)?.value;
 
   await controller(Object.fromEntries(formData.entries()), sessionId);
@@ -196,12 +218,12 @@ export async function createTodo(formData: FormData) {
 ```typescript
 import { getInjection } from '@/di/container';
 
-export default async function TodosPage() {
-  const getTodosController = getInjection('IGetTodosForUserController');
+export default async function {Entity}sPage() {
+  const getController = getInjection('IGet{Entity}sForUserController');
   const sessionId = cookies().get(SESSION_COOKIE)?.value;
 
-  const todos = await getTodosController(sessionId);
-  return <TodoList todos={todos} />;
+  const items = await getController(sessionId);
+  return <{Entity}List items={items} />;
 }
 ```
 
@@ -212,16 +234,20 @@ export default async function TodosPage() {
 Create mock classes in `src/infrastructure/{repositories,services}/*.mock.ts`.
 
 ```typescript
-// src/infrastructure/repositories/todos.repository.mock.ts
-import { ITodosRepository } from '@/src/application/repositories/todos.repository.interface';
+// src/infrastructure/repositories/{entity}s.repository.mock.ts
+import { I{Entity}sRepository } from '@/src/application/repositories/{entity}s.repository.interface';
 
-export class MockTodosRepository implements ITodosRepository {
-  private todos: Todo[] = [];
+export class Mock{Entity}sRepository implements I{Entity}sRepository {
+  private items: {Entity}[] = [];
 
-  async createTodo(todo: TodoInsert): Promise<Todo> {
-    const newTodo = { ...todo, id: this.todos.length + 1 };
-    this.todos.push(newTodo);
-    return newTodo;
+  async create{Entity}(data: {Entity}Insert): Promise<{Entity}> {
+    const newItem = { ...data, id: this.items.length + 1 };
+    this.items.push(newItem);
+    return newItem;
+  }
+
+  async get{Entity}(id: number): Promise<{Entity} | undefined> {
+    return this.items.find(item => item.id === id);
   }
   // ... other mock methods
 }
@@ -231,9 +257,9 @@ export class MockTodosRepository implements ITodosRepository {
 
 ```typescript
 if (process.env.NODE_ENV === 'test') {
-  module.bind(DI_SYMBOLS.ITodosRepository).toClass(MockTodosRepository);
+  module.bind(DI_SYMBOLS.I{Entity}sRepository).toClass(Mock{Entity}sRepository);
 } else {
-  module.bind(DI_SYMBOLS.ITodosRepository).toClass(TodosRepository, [...]);
+  module.bind(DI_SYMBOLS.I{Entity}sRepository).toClass({Entity}sRepository, [...]);
 }
 ```
 
@@ -255,7 +281,7 @@ ApplicationContainer.load(Symbol('AuthenticationModule'), createAuthenticationMo
 ApplicationContainer.load(Symbol('UsersModule'), createUsersModule());
 
 // 5. Feature modules (depend on repositories, services)
-ApplicationContainer.load(Symbol('TodosModule'), createTodosModule());
+ApplicationContainer.load(Symbol('{Domain}Module'), create{Domain}Module());
 ```
 
 ## Checklist
